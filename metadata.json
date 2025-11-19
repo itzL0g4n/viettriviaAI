@@ -1,0 +1,7 @@
+{
+  "name": "Viet Trivia AI",
+  "description": "A real-time voice trivia game hosted by a Vietnamese AI with customizable personalities.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
