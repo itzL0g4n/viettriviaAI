@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { X, Trophy, Clock, Zap, Settings } from 'lucide-react';
+import { X, Trophy, Clock, Zap, Settings, Music } from 'lucide-react';
 import { GameSettings } from '../types';
 import { playUiSound } from '../utils/soundEffects';
 
@@ -27,6 +27,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   const handleDurationChange = (val: number) => {
     playUiSound('tick');
     onUpdate({ ...settings, roundDuration: val });
+  };
+
+  const handleVolumeChange = (val: number) => {
+    onUpdate({ ...settings, musicVolume: val });
   };
 
   return (
@@ -82,6 +86,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                   <span className="relative z-10">{level}</span>
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Music Volume Section */}
+          <div>
+            <div className="flex justify-between mb-3">
+              <label className="text-sm font-medium text-blue-200 flex items-center gap-2 uppercase tracking-wider opacity-80">
+                <Music className="w-4 h-4" /> Background Music
+              </label>
+              <span className="text-sm font-bold text-white bg-white/10 px-2 py-0.5 rounded-md border border-white/10">
+                {Math.round(settings.musicVolume * 100)}%
+              </span>
+            </div>
+            <div className="relative h-8 flex items-center">
+               <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={settings.musicVolume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                className="w-full h-2 bg-black/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,255,255,0.5)] [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-110"
+              />
             </div>
           </div>
 

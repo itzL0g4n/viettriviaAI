@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppState, Personality, SearchResult, GameSettings, Score } from './types';
 import { PERSONALITIES } from './constants';
-import { fetchDailyTriviaFact, playTextToSpeech, stopTts } from './services/geminiService';
+import { fetchDailyTriviaFact } from './services/geminiService';
 import { useLiveSession } from './hooks/useLiveSession';
 import { playUiSound } from './utils/soundEffects';
 import AudioVisualizer from './components/AudioVisualizer';
@@ -25,6 +25,7 @@ const App: React.FC = () => {
     difficulty: 'Medium',
     roundDuration: 60,
     winningScore: 5,
+    musicVolume: 0.1, // Default low volume
   });
 
   // Score State
@@ -33,6 +34,48 @@ const App: React.FC = () => {
 
   // Tutorial State
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+
+  // Background Music Ref
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Initialize Background Music
+  useEffect(() => {
+    if (!audioRef.current) {
+      // Using a royalty-free ambient track (Deep Ambient)
+      audioRef.current = new Audio('https://cdn.pixabay.com/audio/2022/08/02/audio_884fe92c21.mp3');
+      audioRef.current.loop = true;
+      audioRef.current.volume = gameSettings.musicVolume;
+    }
+
+    const playAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.play().catch(() => {
+          // If autoplay is blocked, wait for the first user interaction
+          const startOnInteraction = () => {
+            audioRef.current?.play();
+            document.removeEventListener('click', startOnInteraction);
+          };
+          document.addEventListener('click', startOnInteraction);
+        });
+      }
+    };
+
+    playAudio();
+
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update volume when settings change
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = gameSettings.musicVolume;
+    }
+  }, [gameSettings.musicVolume]);
 
   // Check for first-time visitor
   useEffect(() => {
@@ -92,63 +135,39 @@ const App: React.FC = () => {
   const getSystemInstruction = () => {
     let instruction = selectedPersonality.systemInstruction;
     
-    // Add Easy mode specific instruction
     if (gameSettings.difficulty === 'Easy') {
-      instruction += "\n\nIMPORTANT - EASY MODE ACTIVE: Speak about 20% slower than normal. Articulate every word very clearly.";
+      instruction += "\n\nEASY MODE ACTIVE: Speak slowly. Be forgiving.";
     }
 
     instruction += `
-    The game MUST be played in Vietnamese language.
     
-    GAME CONFIGURATION:
-    - Difficulty Level: ${gameSettings.difficulty}
-    - Winning Score: ${gameSettings.winningScore}.
+    GAME RULES:
+    1. Language: Vietnamese Only.
+    2. Goal: First to ${gameSettings.winningScore} points.
+    3. Difficulty: ${gameSettings.difficulty}.
+
+    CRITICAL INSTRUCTIONS FOR AUDIO INTERACTION:
     
-    CRITICAL DIRECTIVES (STRICT COMPLIANCE REQUIRED):
+    Rule #1: PATIENCE (NO LOOPING)
+    - After you ask a question, YOU MUST WAIT.
+    - If the user is silent, DO NOT SPEAK. Just wait.
+    - If you hear background noise, IGNORE IT. Do not say "incorrect".
+    - ONLY mark an answer as "Incorrect" if the user CLEARLY speaks a wrong answer.
+    
+    Rule #2: SCORE UPDATES
+    - You CANNOT see the screen. You MUST update the score yourself.
+    - When user answers Correctly: Call \`updateScore(player+1, ai)\`.
+    - When user answers Incorrectly: Call \`updateScore(player, ai+1)\`.
+    - ALWAYS call the tool BEFORE you speak the result.
 
-    1. **ZERO MEMORY OF SCORE**:
-       - You are physically incapable of remembering the score. 
-       - You MUST call the 'updateScore' tool IMMEDIATELY after every user answer to "write it down".
-       - **NEVER** speak the score verbally without first calling the 'updateScore' tool.
-       - If you think the score is 4-1, you MUST call 'updateScore(4, 1)' so the screen updates. If you don't call it, the screen shows 0-0.
+    Rule #3: NO TIMER
+    - There is NO time limit. 
+    - NEVER say "Time is up". 
+    - NEVER count down.
+    - If the user says nothing, assume they are thinking.
 
-    2. **NO META-CONVERSATION**:
-       - Do NOT ask "Do you want to continue?".
-       - Do NOT ask "Are you ready for the next question?".
-       - Do NOT ask "Should we keep playing?".
-       - **JUST ASK THE NEXT QUESTION.** Keep the game flow tight and fast.
-       
-    3. **NO TIME LIMITS / NO COUNTDOWNS**:
-       - The user has INFINITE time to answer.
-       - **NEVER** say "You have 3 seconds".
-       - **NEVER** count down "3, 2, 1".
-       - **NEVER** say "Time is up".
-       - If the user is silent, **YOU MUST BE SILENT**. Wait forever if necessary.
-
-    4. **AUDIO & SILENCE HANDLING**:
-       - You are listening to a live audio stream.
-       - Silence or background noise is NOT an answer.
-       - If you hear silence, **DO NOT SPEAK**. Wait for a clear voice.
-       - Do NOT interpret silence as "I don't know".
-       - Do NOT answer the question yourself.
-
-    STRICT GAME LOOP SCRIPT:
-    1. (User speaks answer)
-    2. [INTERNAL]: Evaluate answer. Calculate new score (Player +1 if right, AI +1 if wrong).
-    3. [TOOL CALL]: updateScore(player, ai)  <-- **PRIORITY 1: DO THIS BEFORE SPEAKING**
-    4. [VOICE]: "Đúng/Sai! [Brief Explanation]. [IMMEDIATELY ASK NEXT QUESTION]"
-    5. (Stop talking. Wait for user.)
-
-    Example of CORRECT Flow:
-    User: "Màu xanh."
-    [Tool Call: updateScore(player=1, ai=0)]
-    Voice: "Chính xác! Đó là màu của hy vọng. Câu tiếp theo: Con gì kêu meo meo?"
-    [Voice stops. AI waits.]
-
-    Example of WRONG Flow (FORBIDDEN):
-    Voice: "Câu hỏi là... [Silence]... Bạn không trả lời à? Tiếc quá." (WRONG! Wait!)
-    Voice: "Bạn có muốn chơi tiếp không?" (WRONG! Just ask the question!)
-    Voice: "Bạn có 3 giây..." (WRONG! No timers!)
+    Current Score State (Internal Reference): Player: ${score.player}, AI: ${score.ai}.
+    (Note: You must still track this internally and increment it in your tool calls).
     `;
     
     return instruction;
@@ -188,7 +207,6 @@ const App: React.FC = () => {
     const loadFact = async () => {
       setFactLoading(true);
       try {
-        // Added try/catch/finally here to ensure loading state always clears
         const fact = await fetchDailyTriviaFact();
         setDailyFact(fact);
       } catch (e) {
@@ -204,28 +222,22 @@ const App: React.FC = () => {
   const handlePersonalitySelect = (p: Personality) => {
     playUiSound('select');
     setSelectedPersonality(p);
-    playTextToSpeech(`Xin chào, tôi là ${p.name}`, p.voiceName);
   };
 
   const handleStartGame = () => {
-    // Stop any lingering TTS (Preview voices) so they don't overlap with the live session
-    stopTts();
     playUiSound('start');
     
-    // Ensure previous session is fully dead before starting new logic
     if (isConnected) disconnect();
     
     setScore({ player: 0, ai: 0 });
     setWinner(null);
     setAppState(AppState.GAME);
-    // Slight delay to allow UI transition before connecting
     setTimeout(() => {
        connect();
     }, 500);
   };
 
   const handlePlayAgain = () => {
-    // Disconnect current session, reset score, and restart
     disconnect();
     handleStartGame();
   };
@@ -253,7 +265,6 @@ const App: React.FC = () => {
     disconnect();
   };
 
-  // Helper to get color values for the blobs based on personality
   const getBlobColors = (colorClass: string) => {
     if (colorClass.includes('red')) return ['bg-red-500', 'bg-orange-500', 'bg-pink-500'];
     if (colorClass.includes('green')) return ['bg-green-500', 'bg-emerald-500', 'bg-teal-500'];
@@ -278,7 +289,6 @@ const App: React.FC = () => {
         onClose={closeTutorial}
       />
 
-      {/* Fixed Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         <div className={`absolute top-0 -left-4 w-96 h-96 ${blobColors[0]} rounded-full mix-blend-multiply filter blur-[100px] opacity-50 animate-blob`}></div>
         <div className={`absolute top-0 -right-4 w-96 h-96 ${blobColors[1]} rounded-full mix-blend-multiply filter blur-[100px] opacity-50 animate-blob animation-delay-2000`}></div>
@@ -286,7 +296,6 @@ const App: React.FC = () => {
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150"></div>
       </div>
 
-      {/* Top Header - Non-scrolling */}
       <header className="relative z-20 flex-none pt-4 pb-2 px-4 flex justify-center">
         <div className="w-full max-w-3xl px-2 py-2 bg-white/5 backdrop-blur-2xl border border-white/10 rounded-full flex items-center gap-3 shadow-2xl shadow-black/10 pr-4 justify-between sm:justify-start">
           <div className="flex items-center gap-3 pl-2">
@@ -303,7 +312,6 @@ const App: React.FC = () => {
           <div className="flex items-center gap-2">
              <div className="h-6 w-px bg-white/10 hidden sm:block"></div>
              
-             {/* Help Button */}
              <button 
                onClick={openTutorial}
                onMouseEnter={() => playUiSound('hover')}
@@ -313,7 +321,6 @@ const App: React.FC = () => {
                <CircleHelp className="w-5 h-5" />
              </button>
 
-             {/* Settings Button */}
              <button 
                onClick={openSettings}
                onMouseEnter={() => playUiSound('hover')}
@@ -346,16 +353,13 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Scrollable Content Area */}
       <main className="relative z-10 flex-1 overflow-y-auto overflow-x-hidden scroll-smooth p-4 scrollbar-hide">
         <div className="w-full max-w-7xl mx-auto min-h-full flex flex-col">
           
           {appState === AppState.SETUP && (
             <div className="flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-6 pb-20">
               
-              {/* Left Col: Info & Fact */}
               <div className="lg:col-span-4 flex flex-col gap-4">
-                 {/* Daily Insight Card */}
                  <div className="group relative p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-lg overflow-hidden hover:bg-white/10 transition-colors">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
                     
@@ -395,7 +399,6 @@ const App: React.FC = () => {
                     )}
                  </div>
 
-                 {/* Ready to Play Card - Desktop Only visual cue (Sticky on sidebar) */}
                  <div className="hidden lg:flex p-6 bg-white/5 backdrop-blur-md border border-white/10 rounded-3xl flex-col items-center text-center shadow-xl relative overflow-hidden group transition-all">
                     <div className={`absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity ${selectedPersonality.color}`}></div>
                     <div className={`w-16 h-16 mb-4 rounded-2xl flex items-center justify-center ${selectedPersonality.color} text-white font-bold text-2xl shadow-lg`}>
@@ -413,7 +416,6 @@ const App: React.FC = () => {
                  </div>
               </div>
 
-              {/* Right Col: Personalities */}
               <div className="lg:col-span-8 flex flex-col">
                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                    <Sparkles className="w-5 h-5 text-yellow-400" /> Choose Your Host
@@ -461,7 +463,6 @@ const App: React.FC = () => {
                    })}
                 </div>
 
-                {/* Mobile/Tablet Floating Start Button (Bottom of Grid) */}
                 <div className="lg:hidden sticky bottom-4 z-30 flex justify-center pb-4">
                   <button
                     onClick={handleStartGame}
@@ -482,7 +483,6 @@ const App: React.FC = () => {
           {(appState === AppState.GAME || appState === AppState.FINISHED) && (
             <div className="flex-1 flex flex-col items-center justify-center w-full max-w-4xl mx-auto animate-fade-in h-full min-h-[500px] gap-4 lg:gap-8">
               
-              {/* Scoreboard - Top */}
               <div className="w-full flex-none">
                 <ScoreBoard 
                   score={score} 
@@ -491,14 +491,11 @@ const App: React.FC = () => {
                 />
               </div>
 
-              {/* Central Hub - Flexible Center */}
               <div className="flex-1 w-full relative bg-white/5 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] shadow-2xl flex flex-col items-center justify-between p-6 sm:p-10 overflow-hidden min-h-[300px]">
                 
-                {/* Decorative Internal Gradients */}
                 <div className={`absolute top-[-20%] right-[-20%] w-[80%] h-[80%] ${blobColors[0]} rounded-full mix-blend-overlay filter blur-[80px] opacity-30 animate-blob`}></div>
                 <div className={`absolute bottom-[-20%] left-[-20%] w-[80%] h-[80%] ${blobColors[1]} rounded-full mix-blend-overlay filter blur-[80px] opacity-30 animate-blob animation-delay-2000`}></div>
 
-                {/* Header Info */}
                 <div className="relative z-10 text-center space-y-2 flex-none">
                    <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-[10px] sm:text-xs font-medium tracking-wider transition-all duration-300 ${
                      isConnecting 
@@ -527,18 +524,14 @@ const App: React.FC = () => {
                    </div>
                 </div>
 
-                {/* Avatar / Visualizer Container - Flexible Space */}
                 <div className="relative z-10 flex-1 flex items-center justify-center w-full py-4">
                    <div className="relative group">
-                       {/* Glow Background */}
                        <div className={`absolute inset-0 rounded-full blur-3xl transition-all duration-1000 ${
                          isConnecting ? 'opacity-40 scale-125 bg-blue-600' : `opacity-30 animate-pulse ${selectedPersonality.color}`
                        }`}></div>
                        
-                       {/* Main Circle */}
                        <div className="relative w-40 h-40 sm:w-56 sm:h-56 rounded-full bg-gradient-to-b from-white/10 to-white/5 border border-white/20 flex items-center justify-center shadow-[inset_0_0_40px_rgba(0,0,0,0.2)] backdrop-blur-sm overflow-hidden transition-all duration-500">
                           
-                          {/* Connecting State Inner Visuals */}
                           {isConnecting ? (
                             <div className="absolute inset-0 flex items-center justify-center">
                                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent animate-pulse"></div>
@@ -551,7 +544,6 @@ const App: React.FC = () => {
                           )}
                        </div>
 
-                       {/* Ring Spinner */}
                        <svg className="absolute inset-[-10%] w-[120%] h-[120%] -rotate-90 pointer-events-none" viewBox="0 0 100 100">
                           <circle cx="50" cy="50" r="48" fill="none" stroke="currentColor" strokeWidth="0.5" className={`text-white/10`} />
                           {isConnecting && (
@@ -572,10 +564,8 @@ const App: React.FC = () => {
                    </div>
                 </div>
 
-                {/* Bottom Controls Area */}
                 <div className="relative z-10 flex flex-col items-center w-full gap-4 flex-none">
                   
-                  {/* Visualizer Strip */}
                   <div className="w-full h-12 sm:h-16 flex items-center justify-center px-4">
                     {isConnected ? (
                        <AudioVisualizer active={true} color={selectedPersonality.color} />
@@ -590,7 +580,6 @@ const App: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Mic Button */}
                   <div className="h-20 flex items-center justify-center">
                      {!isConnected && !isConnecting && (
                        <button 
@@ -613,12 +602,11 @@ const App: React.FC = () => {
                      )}
                   </div>
                    
-                   {/* Prominent Error Display */}
                    {error && (
                      <div className="w-full max-w-md bg-red-500/20 border border-red-500/40 text-red-100 px-4 py-3 rounded-xl backdrop-blur-xl flex items-center gap-3 animate-fade-in">
                        <AlertTriangle className="w-5 h-5 flex-none text-red-400" />
                        <div className="flex-1 text-xs leading-relaxed">
-                         <strong>Connection Failed:</strong> {error.includes('API key') ? ' API Key is missing or invalid. Please check your Vercel Environment Variables.' : error}
+                         <strong>Error:</strong> {error}
                        </div>
                      </div>
                    )}
@@ -626,7 +614,6 @@ const App: React.FC = () => {
 
               </div>
 
-              {/* Game End Overlay */}
               {appState === AppState.FINISHED && winner && (
                 <GameEndScreen 
                   winner={winner} 

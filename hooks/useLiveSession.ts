@@ -17,7 +17,7 @@ interface UseLiveSessionProps {
 
 const updateScoreTool: FunctionDeclaration = {
   name: 'updateScore',
-  description: 'Updates the visual game score board. Call this whenever the score changes.',
+  description: 'Updates the score. Call this IMMEDIATELY when the user answers correctly or incorrectly.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -68,12 +68,14 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
     
     // Stop audio processor first to stop sending data
     if (scriptProcessorRef.current) {
-      scriptProcessorRef.current.disconnect();
+      try {
+        scriptProcessorRef.current.disconnect();
+        scriptProcessorRef.current.onaudioprocess = null;
+      } catch (e) {}
       scriptProcessorRef.current = null;
     }
 
     if (sessionRef.current) {
-      // Try catch close as it might already be closed
       try { sessionRef.current.close(); } catch(e) {}
       sessionRef.current = null;
     }
@@ -101,45 +103,46 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
 
     setIsConnected(false);
     setIsConnecting(false);
-    // Reset volume visualization
     if (onVolumeChangeRef.current) onVolumeChangeRef.current(0);
   }, []);
 
   const connect = useCallback(async () => {
-    // Prevent double connection attempts
-    if (isConnecting || isConnected) {
-      console.log("Already connected or connecting, ignoring connect request.");
-      return;
-    }
+    if (isConnecting || isConnected) return;
     
     setIsConnecting(true);
     setError(null);
 
     try {
-      // Safety check for API Key environment
       if (!process.env.API_KEY) {
-         throw new Error("API_KEY is not defined. Please check your environment settings.");
+         throw new Error("API_KEY is not defined. Check your environment variables.");
       }
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      // 1. Output Audio Context
       const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       if (outputCtx.state === 'suspended') {
         await outputCtx.resume();
       }
       audioContextRef.current = outputCtx;
       
-      // 2. Input Audio Context (Mic)
+      // Request microphone with echo cancellation
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 16000
+        } 
+      });
+      
+      mediaStreamRef.current = stream;
+      
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       inputAudioContextRef.current = inputCtx;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-
       nextStartTimeRef.current = 0;
 
-      // Create Session Promise
       const sessionPromise = ai.live.connect({
         model: LIVE_MODEL,
         config: {
@@ -157,31 +160,29 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
             isConnectedRef.current = true;
             setIsConnecting(false);
 
-            // Setup Mic Stream only after connection is open
             const source = inputCtx.createMediaStreamSource(stream);
-            // Reduced buffer size to 2048 for better responsiveness
-            const processor = inputCtx.createScriptProcessor(2048, 1, 1);
+            const processor = inputCtx.createScriptProcessor(4096, 1, 1);
             scriptProcessorRef.current = processor;
 
             processor.onaudioprocess = (e) => {
-               // CRITICAL: Only send data if we are actually connected AND session exists
+               // Strictly check connection state before processing
                if (!isConnectedRef.current || !sessionPromiseRef.current) return;
 
                const inputData = e.inputBuffer.getChannelData(0);
                const pcmBlob = createPcmBlob(inputData);
                
                sessionPromiseRef.current.then(session => {
-                 // Double check inside the promise resolution to avoid race conditions during disconnect
                  if (isConnectedRef.current && session) {
-                   // Fix: Wrapped in try-catch as sendRealtimeInput returns void and cannot use .catch
                    try {
                       session.sendRealtimeInput({ media: pcmBlob });
                    } catch (err) {
-                      console.warn("Dropped audio frame:", err);
-                      // Do NOT disconnect here. Just drop the frame. 
-                      // "Network Error" here is often transient (buffer full, etc).
+                      // Suppress transient errors during transmission
+                      console.warn("Send input error (ignored):", err);
                    }
                  }
+               }).catch(err => {
+                 // Ignore promise rejections for session access if we are disconnecting
+                 console.warn("Session access error:", err);
                });
             };
 
@@ -189,10 +190,8 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
             processor.connect(inputCtx.destination);
           },
           onmessage: async (msg: LiveServerMessage) => {
-            // Guard: If we disconnected while processing a message, stop.
             if (!isConnectedRef.current) return;
 
-            // Handle Tool Calls (Scoring)
             if (msg.toolCall) {
               try {
                 for (const fc of msg.toolCall.functionCalls) {
@@ -202,24 +201,19 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
                       ai: fc.args['aiScore'] as number 
                     };
                     
-                    // Use Ref to access the latest callback closure
                     if (onScoreUpdateRef.current) {
                       onScoreUpdateRef.current(newScore);
                     }
 
-                    // Send response back to model IMMEDIATELY using sessionRef
                     if (sessionRef.current) {
-                       const response = {
-                         functionResponses: [{
-                           id: fc.id,
-                           name: fc.name,
-                           // Sending a very minimal response helps the model move on faster without talking about it
-                           response: { result: "OK" }
-                         }]
-                       };
-                       
                        try {
-                         sessionRef.current.sendToolResponse(response);
+                         sessionRef.current.sendToolResponse({
+                           functionResponses: [{
+                             id: fc.id,
+                             name: fc.name,
+                             response: { result: "OK" }
+                           }]
+                         });
                        } catch(e) {
                          console.error("Failed to send tool response:", e);
                        }
@@ -231,9 +225,7 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
               }
             }
 
-            // Handle Audio
             const base64Audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            
             if (base64Audio && audioContextRef.current) {
               try {
                 const ctx = audioContextRef.current;
@@ -244,7 +236,6 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
                   1
                 );
 
-                // Additional guard after async decode
                 if (!isConnectedRef.current) return;
 
                 const source = ctx.createBufferSource();
@@ -256,7 +247,6 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
                 nextStartTimeRef.current = startTime + audioBuffer.duration;
                 
                 source.start(startTime);
-                
                 sourcesRef.current.add(source);
                 source.onended = () => {
                   sourcesRef.current.delete(source);
@@ -277,29 +267,23 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
           },
           onclose: (e) => {
             console.log('Session closed', e);
-            // Only trigger disconnect if we aren't already doing it
-            if (isConnectedRef.current) {
-              disconnect();
-            }
+            if (isConnectedRef.current) disconnect();
           },
           onerror: (err: any) => {
             console.error('Session error caught:', err);
+            if (err?.message?.includes("interrupted") || err?.message?.includes("abort")) return;
             
-            // Ignore minor audio context warnings or known non-fatal errors
-            if (err?.message?.includes("interrupted") || err?.message?.includes("abort")) {
-              return;
-            }
-
-            let errorMessage = "Connection error detected.";
+            // Better error messaging for Network Error
+            let displayError = "Connection error.";
             if (err instanceof Error) {
-               errorMessage = err.message;
-            } else if (err && typeof err === 'object') {
-               if ('message' in err && typeof err.message === 'string' && err.message) {
-                  errorMessage = err.message;
-               }
+                if (err.message.includes("Network error")) {
+                    displayError = "Network connection unstable. Please verify your API Key and try again.";
+                } else {
+                    displayError = err.message;
+                }
             }
             
-            setError(errorMessage);
+            setError(displayError);
             disconnect();
           }
         }
@@ -311,7 +295,13 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
 
     } catch (e: any) {
       console.error("Connection initialization failed", e);
-      setError(e.message || "Failed to connect. Please check API Key or Network.");
+      let errorMsg = e.message || "Failed to connect.";
+      if (errorMsg.includes("API_KEY")) {
+        errorMsg = "API Key is missing or invalid.";
+      } else if (errorMsg.includes("Network")) {
+        errorMsg = "Network error. Check connection/API key.";
+      }
+      setError(errorMsg);
       setIsConnecting(false);
       isConnectedRef.current = false;
       disconnect();
@@ -321,9 +311,6 @@ export const useLiveSession = ({ systemInstruction, voiceName, onVolumeChange, o
   useEffect(() => {
     let animationFrame: number;
     const updateVolume = () => {
-      if (isConnected) {
-        // Placeholder for visualizer logic
-      }
       animationFrame = requestAnimationFrame(updateVolume);
     };
     updateVolume();

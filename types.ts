@@ -23,6 +23,7 @@ export interface GameSettings {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   roundDuration: number; // in seconds
   winningScore: number;
+  musicVolume: number; // 0.0 to 1.0
 }
 
 export interface Score {
