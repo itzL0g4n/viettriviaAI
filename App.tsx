@@ -215,7 +215,7 @@ const App: React.FC = () => {
   const blobColors = getBlobColors(selectedPersonality.color);
 
   return (
-    <div className="relative h-screen w-full flex flex-col bg-[#0f172a] text-white selection:bg-white/30 overflow-hidden font-sans">
+    <div className="relative h-[100dvh] w-full flex flex-col bg-[#0f172a] text-white selection:bg-white/30 overflow-hidden font-sans">
       
       <SettingsModal 
         isOpen={isSettingsOpen} 
@@ -416,7 +416,7 @@ const App: React.FC = () => {
                 <div className="lg:hidden sticky bottom-4 z-30 flex justify-center pb-4">
                   <button
                     onClick={handleStartGame}
-                    className="w-full max-w-xs py-4 rounded-2xl font-bold text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] bg-[#0f172a] border border-white/20 relative overflow-hidden group"
+                    className="w-full max-w-xs py-4 rounded-2xl font-bold text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] bg-[#0f172a] border border-white/20 relative overflow-hidden group animate-pulse hover:animate-none"
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-90 group-hover:opacity-100 transition-opacity"></div>
                     <div className="relative flex items-center justify-center gap-2">

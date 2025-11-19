@@ -38,13 +38,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
       ></div>
 
       {/* Modal Content */}
-      <div className="relative w-full max-w-md bg-[#1e293b]/70 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden text-white animate-scale-in transform transition-all duration-300 scale-100 opacity-100 ring-1 ring-white/20">
+      <div className="relative w-full max-w-md bg-[#1e293b]/90 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden text-white animate-scale-in transform transition-all duration-300 scale-100 opacity-100 ring-1 ring-white/20 max-h-[85vh] flex flex-col">
         
         {/* Glass Shine Effect */}
-        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-white/10 to-transparent pointer-events-none"></div>
+        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-white/10 to-transparent pointer-events-none z-0"></div>
 
         {/* Header */}
-        <div className="relative px-8 py-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+        <div className="relative z-10 px-8 py-6 border-b border-white/5 flex justify-between items-center bg-white/5 flex-none">
           <h2 className="text-xl font-bold flex items-center gap-3 text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70">
             <Settings className="w-5 h-5 text-blue-400" /> 
             Game Configuration
@@ -57,8 +57,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-8 space-y-8">
+        {/* Body - Scrollable */}
+        <div className="relative z-10 p-8 space-y-8 overflow-y-auto custom-scrollbar flex-1">
           
           {/* Difficulty Section */}
           <div>
@@ -140,8 +140,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
 
         </div>
 
-        {/* Footer */}
-        <div className="p-8 pt-0">
+        {/* Footer - Fixed at bottom */}
+        <div className="relative z-10 p-8 pt-4 flex-none border-t border-white/5">
           <button 
             onClick={() => { playUiSound('click'); onClose(); }}
             className="w-full py-4 rounded-2xl font-bold text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-[0_0_30px_rgba(59,130,246,0.5)] transform hover:scale-[1.02] transition-all border border-white/10 relative overflow-hidden group"
