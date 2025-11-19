@@ -1,9 +1,11 @@
-
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality, LiveSession, FunctionDeclaration, Type } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
 import { createPcmBlob, base64ToUint8Array, decodeAudioData } from '../utils/audio';
 import { LIVE_MODEL } from '../constants';
 import { Score } from '../types';
+
+// Define LiveSession type inference as it is not exported from the package
+type LiveSession = Awaited<ReturnType<GoogleGenAI['live']['connect']>>;
 
 interface UseLiveSessionProps {
   systemInstruction: string;
