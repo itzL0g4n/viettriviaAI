@@ -1,6 +1,8 @@
+
 export enum AppState {
   SETUP = 'SETUP',
   GAME = 'GAME',
+  FINISHED = 'FINISHED',
 }
 
 export interface Personality {
@@ -15,6 +17,17 @@ export interface Personality {
 export interface SearchResult {
   text: string;
   sources: { uri: string; title: string }[];
+}
+
+export interface GameSettings {
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  roundDuration: number; // in seconds
+  winningScore: number;
+}
+
+export interface Score {
+  player: number;
+  ai: number;
 }
 
 // Live API Types

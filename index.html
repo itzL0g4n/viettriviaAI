@@ -6,19 +6,54 @@
     <title>Viet Trivia AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      /* Custom scrollbar for a sleek look */
+      @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+      body {
+        font-family: 'Outfit', sans-serif;
+        background-color: #0f172a; /* slate-900 */
+      }
+
+      /* Custom scrollbar */
       ::-webkit-scrollbar {
-        width: 8px;
+        width: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #1f2937;
+        background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: #4b5563;
-        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #6b7280;
+        background: rgba(255, 255, 255, 0.3);
+      }
+
+      /* Liquid Blob Animations */
+      @keyframes blob {
+        0% { transform: translate(0px, 0px) scale(1); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 20px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1); }
+      }
+      .animate-blob {
+        animation: blob 7s infinite;
+      }
+      .animation-delay-2000 {
+        animation-delay: 2s;
+      }
+      .animation-delay-4000 {
+        animation-delay: 4s;
+      }
+      
+      /* Glass Shimmer */
+      @keyframes shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+      .animate-shimmer {
+        background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0) 100%);
+        background-size: 200% 100%;
+        animation: shimmer 3s infinite;
       }
     </style>
   <script type="importmap">
@@ -33,7 +68,7 @@
 }
 </script>
 </head>
-  <body class="bg-gray-900 text-white antialiased overflow-hidden">
+  <body class="text-white antialiased overflow-hidden">
     <div id="root"></div>
   </body>
 </html>
