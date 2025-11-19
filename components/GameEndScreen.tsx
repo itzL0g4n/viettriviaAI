@@ -20,7 +20,7 @@ const GameEndScreen: React.FC<GameEndScreenProps> = ({ winner, score, onPlayAgai
   }, []);
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 animate-fade-in bg-black/60 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center w-screen h-screen p-4 animate-fade-in bg-black/80 backdrop-blur-lg">
       <div className="relative w-full max-w-lg p-8 rounded-[3rem] overflow-hidden flex flex-col items-center text-center shadow-2xl animate-scale-in border border-white/10 bg-[#1e293b]">
         
         {/* Dynamic Background */}

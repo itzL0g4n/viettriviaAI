@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, Personality, SearchResult, GameSettings, Score } from './types';
 import { PERSONALITIES } from './constants';
-import { fetchDailyTriviaFact, playTextToSpeech } from './services/geminiService';
+import { fetchDailyTriviaFact, playTextToSpeech, stopTts } from './services/geminiService';
 import { useLiveSession } from './hooks/useLiveSession';
 import { playUiSound } from './utils/soundEffects';
 import AudioVisualizer from './components/AudioVisualizer';
@@ -10,7 +10,7 @@ import SettingsModal from './components/SettingsModal';
 import TutorialOverlay from './components/TutorialOverlay';
 import ScoreBoard from './components/ScoreBoard';
 import GameEndScreen from './components/GameEndScreen';
-import { Mic, MicOff, Sparkles, Info, Volume2, Radio, Globe, PlayCircle, Loader2, Disc, Settings, CircleHelp } from 'lucide-react';
+import { Mic, MicOff, Sparkles, Info, Volume2, Radio, Globe, PlayCircle, Loader2, Disc, Settings, CircleHelp, AlertTriangle } from 'lucide-react';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.SETUP);
@@ -94,7 +94,7 @@ const App: React.FC = () => {
     
     // Add Easy mode specific instruction
     if (gameSettings.difficulty === 'Easy') {
-      instruction += "\n\nIMPORTANT - EASY MODE ACTIVE: Speak about 20% slower than normal. Articulate every word very clearly. Leave longer pauses (1-2 seconds) between sentences to ensure the user has time to process.";
+      instruction += "\n\nIMPORTANT - EASY MODE ACTIVE: Speak about 20% slower than normal. Articulate every word very clearly.";
     }
 
     instruction += `
@@ -102,18 +102,54 @@ const App: React.FC = () => {
     
     GAME CONFIGURATION:
     - Difficulty Level: ${gameSettings.difficulty}
-    - Round/Question Duration: Keep pacing around ${gameSettings.roundDuration} seconds.
     - Winning Score: ${gameSettings.winningScore}.
     
-    SCORING RULES:
-    - You are responsible for keeping track of the score.
-    - If the user answers correctly, they get 1 point.
-    - If the user answers incorrectly or passes, you (the host) get 1 point.
-    - You MUST use the provided 'updateScore' tool IMMEDIATELY whenever points are awarded to update the visual scoreboard.
-    - Do not just say the score; call the function.
-    
-    When a user reaches ${gameSettings.winningScore} points, celebrate wildly and declare them the winner!
-    When you (the host) reach ${gameSettings.winningScore} points, playfully declare yourself the winner.`;
+    CRITICAL DIRECTIVES (STRICT COMPLIANCE REQUIRED):
+
+    1. **ZERO MEMORY OF SCORE**:
+       - You are physically incapable of remembering the score. 
+       - You MUST call the 'updateScore' tool IMMEDIATELY after every user answer to "write it down".
+       - **NEVER** speak the score verbally without first calling the 'updateScore' tool.
+       - If you think the score is 4-1, you MUST call 'updateScore(4, 1)' so the screen updates. If you don't call it, the screen shows 0-0.
+
+    2. **NO META-CONVERSATION**:
+       - Do NOT ask "Do you want to continue?".
+       - Do NOT ask "Are you ready for the next question?".
+       - Do NOT ask "Should we keep playing?".
+       - **JUST ASK THE NEXT QUESTION.** Keep the game flow tight and fast.
+       
+    3. **NO TIME LIMITS / NO COUNTDOWNS**:
+       - The user has INFINITE time to answer.
+       - **NEVER** say "You have 3 seconds".
+       - **NEVER** count down "3, 2, 1".
+       - **NEVER** say "Time is up".
+       - If the user is silent, **YOU MUST BE SILENT**. Wait forever if necessary.
+
+    4. **AUDIO & SILENCE HANDLING**:
+       - You are listening to a live audio stream.
+       - Silence or background noise is NOT an answer.
+       - If you hear silence, **DO NOT SPEAK**. Wait for a clear voice.
+       - Do NOT interpret silence as "I don't know".
+       - Do NOT answer the question yourself.
+
+    STRICT GAME LOOP SCRIPT:
+    1. (User speaks answer)
+    2. [INTERNAL]: Evaluate answer. Calculate new score (Player +1 if right, AI +1 if wrong).
+    3. [TOOL CALL]: updateScore(player, ai)  <-- **PRIORITY 1: DO THIS BEFORE SPEAKING**
+    4. [VOICE]: "Đúng/Sai! [Brief Explanation]. [IMMEDIATELY ASK NEXT QUESTION]"
+    5. (Stop talking. Wait for user.)
+
+    Example of CORRECT Flow:
+    User: "Màu xanh."
+    [Tool Call: updateScore(player=1, ai=0)]
+    Voice: "Chính xác! Đó là màu của hy vọng. Câu tiếp theo: Con gì kêu meo meo?"
+    [Voice stops. AI waits.]
+
+    Example of WRONG Flow (FORBIDDEN):
+    Voice: "Câu hỏi là... [Silence]... Bạn không trả lời à? Tiếc quá." (WRONG! Wait!)
+    Voice: "Bạn có muốn chơi tiếp không?" (WRONG! Just ask the question!)
+    Voice: "Bạn có 3 giây..." (WRONG! No timers!)
+    `;
     
     return instruction;
   };
@@ -151,9 +187,16 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadFact = async () => {
       setFactLoading(true);
-      const fact = await fetchDailyTriviaFact();
-      setDailyFact(fact);
-      setFactLoading(false);
+      try {
+        // Added try/catch/finally here to ensure loading state always clears
+        const fact = await fetchDailyTriviaFact();
+        setDailyFact(fact);
+      } catch (e) {
+        console.error("Failed to load fact", e);
+        setDailyFact({ text: "Did you know? Vietnam is the world's second-largest coffee exporter!", sources: [] });
+      } finally {
+        setFactLoading(false);
+      }
     };
     loadFact();
   }, []);
@@ -165,7 +208,13 @@ const App: React.FC = () => {
   };
 
   const handleStartGame = () => {
+    // Stop any lingering TTS (Preview voices) so they don't overlap with the live session
+    stopTts();
     playUiSound('start');
+    
+    // Ensure previous session is fully dead before starting new logic
+    if (isConnected) disconnect();
+    
     setScore({ player: 0, ai: 0 });
     setWinner(null);
     setAppState(AppState.GAME);
@@ -325,7 +374,7 @@ const App: React.FC = () => {
                     ) : (
                       <div className="space-y-3">
                         <p className="text-base font-light leading-relaxed text-white/80">
-                          {dailyFact?.text}
+                          {dailyFact?.text || "Welcome! Ready to test your knowledge?"}
                         </p>
                         {dailyFact?.sources && dailyFact.sources.length > 0 && (
                           <div className="flex flex-wrap gap-2 pt-2 border-t border-white/5">
@@ -564,9 +613,13 @@ const App: React.FC = () => {
                      )}
                   </div>
                    
+                   {/* Prominent Error Display */}
                    {error && (
-                     <div className="w-max max-w-xs bg-red-500/10 border border-red-500/20 text-red-200 text-[10px] px-3 py-1 rounded-lg backdrop-blur-md">
-                       {error}
+                     <div className="w-full max-w-md bg-red-500/20 border border-red-500/40 text-red-100 px-4 py-3 rounded-xl backdrop-blur-xl flex items-center gap-3 animate-fade-in">
+                       <AlertTriangle className="w-5 h-5 flex-none text-red-400" />
+                       <div className="flex-1 text-xs leading-relaxed">
+                         <strong>Connection Failed:</strong> {error.includes('API key') ? ' API Key is missing or invalid. Please check your Vercel Environment Variables.' : error}
+                       </div>
                      </div>
                    )}
                 </div>
